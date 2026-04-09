@@ -6,10 +6,18 @@ package org.wildfly.extension.micrometer.prometheus;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 record MediaType(String type, String subtype, Map<String, String> parameters) implements Comparable<MediaType> {
 
-    static final String WILDCARD = "*";
+    MediaType(String type, String subtype, Map<String, String> parameters) {
+        this.type = type;
+        this.subtype = subtype;
+        this.parameters = Map.copyOf(parameters);
+    }
+
+    private static final String WILDCARD = "*";
 
     static MediaType parse(String input) {
         String[] parts = input.split(";");
@@ -50,6 +58,10 @@ record MediaType(String type, String subtype, Map<String, String> parameters) im
     boolean matches(String otherType, String otherSubtype) {
         return (type.equalsIgnoreCase(otherType) || WILDCARD.equals(type) || WILDCARD.equals(otherType)) &&
                 (subtype.equalsIgnoreCase(otherSubtype) || WILDCARD.equals(subtype) || WILDCARD.equals(otherSubtype));
+    }
+
+    boolean hasParameters(Map<String, String> parameters, Set<String> parameterKeysToIgnore) {
+        return parameters().entrySet().containsAll(parameters.entrySet().stream().filter(e -> !parameterKeysToIgnore.contains(e.getKey())).collect(Collectors.toSet()));
     }
 
     private int specificity() {

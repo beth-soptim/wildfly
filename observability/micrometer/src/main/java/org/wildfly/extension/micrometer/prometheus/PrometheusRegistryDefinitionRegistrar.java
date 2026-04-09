@@ -7,9 +7,11 @@ package org.wildfly.extension.micrometer.prometheus;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
+import java.util.stream.Stream;
 
 import io.micrometer.core.instrument.composite.CompositeMeterRegistry;
 import io.prometheus.metrics.expositionformats.OpenMetricsTextFormatWriter;
@@ -120,9 +122,9 @@ public class PrometheusRegistryDefinitionRegistrar implements ChildResourceDefin
         List<MediaType> mediaTypes = headerValues != null ? getSortedMediaTypes(String.join(", ", headerValues)) : List.of();
         boolean sent = false;
         for (MediaType mediaType : mediaTypes) {
-            MediaType metricsMediaType = getMetricsMediaType(mediaType);
-            if (metricsMediaType != null) {
-                sendMetrics(metricsMediaType, prometheusRegistry, exchange);
+            Optional<MediaType> metricsMediaType = getMetricsMediaType(mediaType);
+            if (metricsMediaType.isPresent()) {
+                sendMetrics(metricsMediaType.get(), prometheusRegistry, exchange);
                 sent = true;
                 break;
             }
@@ -137,16 +139,12 @@ public class PrometheusRegistryDefinitionRegistrar implements ChildResourceDefin
         }
     }
 
-    private static MediaType getMetricsMediaType(MediaType mediaType) {
-        MediaType metricsMediaType = null;
-        if (PROMETHEUS_TEXT_MEDIA_TYPE.matches(mediaType.type(), mediaType.subtype())) {
-            metricsMediaType = PROMETHEUS_TEXT_MEDIA_TYPE;
-        } else if (OPENMETRICS_TEXT_MEDIA_TYPE.matches(mediaType.type(), mediaType.subtype())) {
-            metricsMediaType = OPENMETRICS_TEXT_MEDIA_TYPE;
-        } else if (PROMETHEUS_PROTOBUF_MEDIA_TYPE.matches(mediaType.type(), mediaType.subtype())) {
-            metricsMediaType = PROMETHEUS_PROTOBUF_MEDIA_TYPE;
-        }
-        return metricsMediaType;
+    private static Optional<MediaType> getMetricsMediaType(MediaType mediaType) {
+        return Stream.of(PROMETHEUS_TEXT_MEDIA_TYPE, OPENMETRICS_TEXT_MEDIA_TYPE, PROMETHEUS_PROTOBUF_MEDIA_TYPE)
+                .filter(mmt -> mmt.matches(mediaType.type(), mediaType.subtype())
+                        // ignoring q (only relevant for priority), version and charset (micrometer-registry-prometheus is doing the same)
+                        && mediaType.hasParameters(mmt.parameters(), Set.of("q", "version", "charset")))
+                .findAny();
     }
 
     private void sendMetrics(MediaType mediaType, WildFlyPrometheusRegistry prometheusRegistry, HttpServerExchange exchange) {
@@ -164,10 +162,6 @@ public class PrometheusRegistryDefinitionRegistrar implements ChildResourceDefin
     }
 
     private static List<MediaType> parseMediaType(String acceptHeaderValues) {
-        if (acceptHeaderValues == null || acceptHeaderValues.isEmpty()) {
-            return List.of(new MediaType(MediaType.WILDCARD, MediaType.WILDCARD, Map.of()));
-        }
-
         return Arrays.stream(acceptHeaderValues.split(",")).map(String::trim).filter(s -> !s.isEmpty()).map(MediaType::parse).sorted()
                 .toList();
     }
